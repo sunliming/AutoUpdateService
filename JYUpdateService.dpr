@@ -7,4 +7,5 @@ uses
   Service in 'Service.pas';
 
 begin
+  Main;
 end.
