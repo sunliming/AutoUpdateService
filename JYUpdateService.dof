@@ -41,7 +41,7 @@ MaxStackSize=1048576
 ImageBase=4194304
 ExeDescription=
 [Directories]
-OutputDir=.\_output
+OutputDir=d:\jiaoyan\toll
 UnitOutputDir=.\_temp
 PackageDLLOutputDir=
 PackageDCPOutputDir=
@@ -66,7 +66,7 @@ AutoIncBuild=1
 MajorVer=1
 MinorVer=0
 Release=0
-Build=35
+Build=71
 Debug=0
 PreRelease=0
 Special=0
@@ -77,7 +77,7 @@ CodePage=936
 [Version Info Keys]
 CompanyName=
 FileDescription=
-FileVersion=1.0.0.35
+FileVersion=1.0.0.71
 InternalName=
 LegalCopyright=
 LegalTrademarks=
@@ -96,5 +96,6 @@ Item0=WinTypes=Windows;WinProcs=Windows;DbiTypes=BDE;DbiProcs=BDE;DbiErrs=BDE;
 Count=1
 Item0=.\_temp
 [HistoryLists\hlOutputDirectorry]
-Count=1
-Item0=.\_output
+Count=2
+Item0=d:\jiaoyan\toll
+Item1=.\_output

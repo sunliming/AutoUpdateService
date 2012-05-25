@@ -7,7 +7,7 @@ procedure Main;
 implementation
 
 uses Windows, Messages, SysUtils, JwaWinSvc, JwaWinNT, slmlog,
-  ProgramVersion, uGlobal;
+  ProgramVersion, uGlobal, uUpdateService;
 
 const
   SERVICE_NAME = 'JYAppUpdateService';
@@ -88,13 +88,19 @@ begin
   GetModuleFileName(0, szFilePath, MAX_PATH);
 
   //创建服务
-  hService := CreateService(hSCM, SERVICE_NAME, SERVICE_NAME, SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS, SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL, szFilePath, nil, nil, '', nil, nil);
+  hService := CreateService(hSCM, SERVICE_NAME, SERVICE_NAME, SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS, SERVICE_AUTO_START, SERVICE_ERROR_NORMAL, szFilePath, nil, nil, '', nil, nil);
   if (hService = 0) then
   begin
     CloseServiceHandle(hSCM);
     SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), 'Install(): Couldn''t create service.');
     MessageBox(0, 'Couldn''t create service', SERVICE_NAME, MB_OK);
     exit;
+  end;
+
+  //启动服务
+  if not StartService(hService, 0, nil) then
+  begin
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), 'Install(): Couldn''t Start service.');
   end;
 
   CloseServiceHandle(hService);
@@ -217,7 +223,8 @@ begin
   SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), 'ServiceMain(): Started.');
   while (status.dwCurrentState = SERVICE_RUNNING) do
   begin
-    Sleep(1000);
+    UpdateService('d:\jiaoyan\toll\JYUpdateService.exe.uTMP', SERVICE_NAME);
+    Sleep(5000);
   end;
 
   SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), 'ServiceMain(): Stop.');

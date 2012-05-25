@@ -23,7 +23,7 @@ begin
     case AFlag of
       1: begin
         WriteLn(F, ''); //换行
-        Write(F, Format('%s %s', [FormatDateTime('yyyy-MM-dd hh:mm:ss', now), ALog])); //一行的开始
+        Write(F, Format('%s %-16s %s', [FormatDateTime('yyyy-MM-dd hh:mm:ss.zzz', now), ChangeFileExt(ExtractFileName(GetModuleName(hInstance)), ''), ALog])); //一行的开始
       end;
       2: Write(F, Format(' %s', [ALog])); //一行的中间内容
       3: WriteLn(F, Format(' %s', [ALog])); //一行的结束
