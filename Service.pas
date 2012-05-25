@@ -85,7 +85,7 @@ begin
   GetModuleFileName(0, szFilePath, MAX_PATH);
 
   //创建服务
-  hService := CreateService(hSCM, SERVICE_NAME, SERVICE_NAME, SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS, SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL, szFilePath, 0, 0, '', 0, 0);
+  hService := CreateService(hSCM, SERVICE_NAME, SERVICE_NAME, SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS, SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL, szFilePath, nil, nil, '', nil, nil);
   if (hService = 0) then
   begin
     CloseServiceHandle(hSCM);
@@ -95,7 +95,7 @@ begin
 
   CloseServiceHandle(hService);
   CloseServiceHandle(hSCM);
-  
+
   result := true;
 end;
 
@@ -114,7 +114,7 @@ begin
     exit;
   end;
 
-  hSCM := OpenSCManager(0, 0, SC_MANAGER_ALL_ACCESS);
+  hSCM := OpenSCManager(nil, nil, SC_MANAGER_ALL_ACCESS);
   if (hSCM = 0) then
   begin
     MessageBox(0, 'Couldn''t open service manager', SERVICE_NAME, MB_OK);
@@ -198,7 +198,7 @@ begin
 
   //模拟服务的运行，10秒后自动退出。应用时将主要任务放于此即可
   i := 0;
-  while (i < 10) do
+  while (i < 100) and (status.dwCurrentState = SERVICE_RUNNING) do
   begin
     Sleep(1000);
     Inc(i);
@@ -222,8 +222,8 @@ begin
   st[1].lpServiceName := nil;
   st[1].lpServiceProc := nil;
 
-  if FindCmdLineSwitch('install', ['-', '/'], true) then install
-  else if FindCmdLineSwitch('uninstall', ['-', '/'], true) then uninstall
+  if FindCmdLineSwitch('install', ['/', '-'], true) then install
+  else if FindCmdLineSwitch('uninstall', ['/', '-'], true) then uninstall
   else if not StartServiceCtrlDispatcher(@st[0]) then LogEvent('Register Service Main Function Error!');
 end;
 

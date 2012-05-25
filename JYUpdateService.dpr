@@ -4,7 +4,8 @@ program JYUpdateService;
 
 uses
   SysUtils,
-  Service in 'Service.pas';
+  Service in 'Service.pas',
+  slmlog in 'slmlog.pas';
 
 begin
   Main;
