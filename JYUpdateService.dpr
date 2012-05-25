@@ -1,7 +1,8 @@
 program JYUpdateService;
 
 uses
-  SysUtils;
+  SysUtils,
+  Service in 'Service.pas';
 
 begin
 end.
