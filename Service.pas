@@ -7,11 +7,10 @@ procedure Main;
 implementation
 
 uses Windows, Messages, SysUtils, JwaWinSvc, JwaWinNT, slmlog,
-  ProgramVersion;
+  ProgramVersion, uGlobal;
 
 const
   SERVICE_NAME = 'JYAppUpdateService';
-  LOG_FILE     = 'd:\jiaoyan\toll\AutoUpdateService_%s.log';
 
 var
   hServiceStatus: SERVICE_STATUS_HANDLE;

@@ -7,7 +7,8 @@ uses
   Service in 'Service.pas',
   slmlog in 'slmlog.pas',
   ProgramVersion in 'ProgramVersion.pas',
-  uUpdateService in 'uUpdateService.pas';
+  uUpdateService in 'uUpdateService.pas',
+  uGlobal in 'uGlobal.pas';
 
 begin
   Main;
