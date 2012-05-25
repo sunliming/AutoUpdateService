@@ -6,11 +6,12 @@ procedure Main;
 
 implementation
 
-uses Windows, Messages, SysUtils, JwaWinSvc, JwaWinNT, slmlog;
+uses Windows, Messages, SysUtils, JwaWinSvc, JwaWinNT, slmlog,
+  ProgramVersion;
 
 const
   SERVICE_NAME = 'JYAppUpdateService';
-
+  LOG_FILE     = 'd:\jiaoyan\toll\AutoUpdateService.log';
 var
   hServiceStatus: SERVICE_STATUS_HANDLE;
   status: TServiceStatus;
@@ -68,6 +69,7 @@ begin
 
   if IsInstalled then
   begin
+    SaveToLogFile(LOG_FILE, 'Install(): 服务已经存在.');
     result := true;
     exit;
   end;
@@ -76,6 +78,7 @@ begin
   hSCM := OpenSCManager(nil, nil, SC_MANAGER_ALL_ACCESS);
   if hSCM = 0 then
   begin
+    SaveToLogFile(LOG_FILE, 'Install(): Couldn''t open service manager.');
     MessageBox(0, 'Couldn''t open service manager', SERVICE_NAME, MB_OK);
     exit;
   end;
@@ -89,6 +92,7 @@ begin
   if (hService = 0) then
   begin
     CloseServiceHandle(hSCM);
+    SaveToLogFile(LOG_FILE, 'Install(): Couldn''t create service.');
     MessageBox(0, 'Couldn''t create service', SERVICE_NAME, MB_OK);
     exit;
   end;
@@ -96,6 +100,7 @@ begin
   CloseServiceHandle(hService);
   CloseServiceHandle(hSCM);
 
+  SaveToLogFile(LOG_FILE, Format('Install(): 服务安装成功. 执行文件版本:%s', [GetFileVersion(PChar(@szFilePath[0]))]));
   result := true;
 end;
 
@@ -110,6 +115,7 @@ begin
   
   if (not IsInstalled) then
   begin
+    SaveToLogFile(LOG_FILE, 'uninstall(): 服务未安装，无需卸载.');
     result := true;
     exit;
   end;
@@ -117,6 +123,7 @@ begin
   hSCM := OpenSCManager(nil, nil, SC_MANAGER_ALL_ACCESS);
   if (hSCM = 0) then
   begin
+    SaveToLogFile(LOG_FILE, 'uninstall(): Couldn''t open service manager');
     MessageBox(0, 'Couldn''t open service manager', SERVICE_NAME, MB_OK);
     exit;
   end;
@@ -125,6 +132,7 @@ begin
   if (hService = 0) then
   begin
     CloseServiceHandle(hSCM);
+    SaveToLogFile(LOG_FILE, 'uninstall(): Couldn''t open service');
     MessageBox(0, 'Couldn''t open service', SERVICE_NAME, MB_OK);
     exit;
   end;
@@ -136,18 +144,14 @@ begin
   CloseServiceHandle(hService);
   CloseServiceHandle(hSCM);
 
-  if (bDelete) then
-  begin
-    result := true;
-    exit;
-  end;
-
   if (not bDelete) then
   begin
+    SaveToLogFile(LOG_FILE, 'uninstall(): Service could not be deleted');
     LogEvent('Service could not be deleted');
     exit;
   end;
 
+  SaveToLogFile(LOG_FILE, 'uninstall(): 服务卸载成功.');
   result := true;
 end;
 
@@ -155,19 +159,25 @@ procedure ServiceStrl(dwOpcode: DWORD); stdcall;
 begin
   case dwOpcode of
     SERVICE_CONTROL_STOP: begin
+      SaveToLogFile(LOG_FILE, 'ServiceStrl(): SERVICE_CONTROL_STOP');
       status.dwCurrentState := SERVICE_STOP_PENDING;
       SetServiceStatus(hServiceStatus, status);
       PostThreadMessage(dwThreadID, WM_CLOSE, 0, 0);
     end;
     SERVICE_CONTROL_PAUSE: begin
+      SaveToLogFile(LOG_FILE, 'ServiceStrl(): SERVICE_CONTROL_PAUSE');
     end;
     SERVICE_CONTROL_CONTINUE: begin
+      SaveToLogFile(LOG_FILE, 'ServiceStrl(): SERVICE_CONTROL_CONTINUE');
     end;
     SERVICE_CONTROL_INTERROGATE: begin
+      SaveToLogFile(LOG_FILE, 'ServiceStrl(): SERVICE_CONTROL_INTERROGATE');
     end;
     SERVICE_CONTROL_SHUTDOWN: begin
+      SaveToLogFile(LOG_FILE, 'ServiceStrl(): SERVICE_CONTROL_SHUTDOWN');
     end;
     else begin
+      SaveToLogFile(LOG_FILE, 'ServiceStrl(): Bad service request');
       LogEvent('Bad service request');
     end;
   end;
@@ -176,8 +186,12 @@ end;
 procedure ServiceMain(dwNumServicesArgs: DWORD; lpServiceArgVectors: LPSTR); stdcall;
 var
   i: integer;
+  szFilePath: array[0..MAX_PATH-1] of char;
 begin
-  SaveToLogFile('.\AutoUpdateService.log', 'Starting...');
+  ZeroMemory(@szFilePath[0], sizeof(szFilePath));
+  GetModuleFileName(0, szFilePath, MAX_PATH);
+  SaveToLogFile(LOG_FILE, Format('ServiceMain(): 程序版本:%s. Starting...', [GetFileVersion(PChar(@szFilePath[0]))]));
+
   // Register the control request handler
   status.dwCurrentState := SERVICE_START_PENDING;
   status.dwControlsAccepted := SERVICE_ACCEPT_STOP;
@@ -186,6 +200,7 @@ begin
   hServiceStatus := RegisterServiceCtrlHandler(SERVICE_NAME, @ServiceStrl);
   if (hServiceStatus = 0) then
   begin
+    SaveToLogFile(LOG_FILE, 'ServiceMain(): Handler not installed.');
     LogEvent('Handler not installed');
     exit;
   end;
@@ -198,7 +213,7 @@ begin
   SetServiceStatus(hServiceStatus, status);
 
   //模拟服务的运行，10秒后自动退出。应用时将主要任务放于此即可
-  SaveToLogFile('.\AutoUpdateService.log', 'Started.');
+  SaveToLogFile(LOG_FILE, 'ServiceMain(): Started.');
   i := 0;
   while (i < 100) and (status.dwCurrentState = SERVICE_RUNNING) do
   begin
@@ -206,7 +221,7 @@ begin
     Inc(i);
   end;
 
-  SaveToLogFile('.\AutoUpdateService.log', 'Stop.');
+  SaveToLogFile(LOG_FILE, 'ServiceMain(): Stop.');
   status.dwCurrentState := SERVICE_STOPPED;
   SetServiceStatus(hServiceStatus, status);
   LogEvent('Service stopped');
@@ -225,9 +240,23 @@ begin
   st[1].lpServiceName := nil;
   st[1].lpServiceProc := nil;
 
-  if FindCmdLineSwitch('install', ['/', '-'], true) then install
-  else if FindCmdLineSwitch('uninstall', ['/', '-'], true) then uninstall
-  else if not StartServiceCtrlDispatcher(@st[0]) then LogEvent('Register Service Main Function Error!');
+  if FindCmdLineSwitch('install', ['/', '-'], true) then
+  begin
+    SaveToLogFile(LOG_FILE, '');
+    SaveToLogFile(LOG_FILE, '========================================================================');
+    SaveToLogFile(LOG_FILE, 'Main(): install');
+    install;
+  end
+  else if FindCmdLineSwitch('uninstall', ['/', '-'], true) then
+  begin
+    SaveToLogFile(LOG_FILE, 'Main(): uninstall');
+    uninstall;
+  end
+  else if not StartServiceCtrlDispatcher(@st[0]) then
+  begin
+    SaveToLogFile(LOG_FILE, 'Main(): Register Service Main Function Error!');
+    LogEvent('Register Service Main Function Error!');
+  end;
 end;
 
 end.
