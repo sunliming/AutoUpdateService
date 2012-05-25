@@ -48,6 +48,8 @@ end;
 
 procedure ServiceMain;
 begin
+  Init;
+  
 end;
 
 end.
