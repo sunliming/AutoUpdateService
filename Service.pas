@@ -6,7 +6,7 @@ procedure Main;
 
 implementation
 
-uses Windows, Messages, SysUtils, JwaWinSvc, JwaWinNT;
+uses Windows, Messages, SysUtils, JwaWinSvc, JwaWinNT, slmlog;
 
 const
   SERVICE_NAME = 'JYAppUpdateService';
@@ -177,6 +177,7 @@ procedure ServiceMain(dwNumServicesArgs: DWORD; lpServiceArgVectors: LPSTR); std
 var
   i: integer;
 begin
+  SaveToLogFile('.\AutoUpdateService.log', 'Starting...');
   // Register the control request handler
   status.dwCurrentState := SERVICE_START_PENDING;
   status.dwControlsAccepted := SERVICE_ACCEPT_STOP;
@@ -197,6 +198,7 @@ begin
   SetServiceStatus(hServiceStatus, status);
 
   //模拟服务的运行，10秒后自动退出。应用时将主要任务放于此即可
+  SaveToLogFile('.\AutoUpdateService.log', 'Started.');
   i := 0;
   while (i < 100) and (status.dwCurrentState = SERVICE_RUNNING) do
   begin
@@ -204,6 +206,7 @@ begin
     Inc(i);
   end;
 
+  SaveToLogFile('.\AutoUpdateService.log', 'Stop.');
   status.dwCurrentState := SERVICE_STOPPED;
   SetServiceStatus(hServiceStatus, status);
   LogEvent('Service stopped');
