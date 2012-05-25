@@ -1,6 +1,6 @@
 # delphi6制作的可以自我更新的windows服务程序
 
-这是项目 [helloworld](https://github.com/sunliming/AutoUpdateService) ，
+这是项目 [AutoUpdateService](https://github.com/sunliming/AutoUpdateService) ，
 欢迎访问。
 
 这个项目的版本库是 **Git格式** ，在 Windows、Linux、Mac OS X
