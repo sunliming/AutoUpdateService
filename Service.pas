@@ -6,11 +6,8 @@ procedure Main;
 
 implementation
 
-uses Windows, Messages, SysUtils, JwaWinSvc, JwaWinNT, slmlog,
-  ProgramVersion, uGlobal, uUpdateService;
-
-const
-  SERVICE_NAME = 'JYAppUpdateService';
+uses StrUtils, Windows, Messages, SysUtils, JwaWinSvc, JwaWinNT, slmlog,
+  uGlobal, uUpdateService, uDownloadFiles, uFileVersionProc, uSocket;
 
 var
   hServiceStatus: SERVICE_STATUS_HANDLE;
@@ -79,7 +76,6 @@ begin
   if hSCM = 0 then
   begin
     SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), 'Install(): Couldn''t open service manager.');
-    MessageBox(0, 'Couldn''t open service manager', SERVICE_NAME, MB_OK);
     exit;
   end;
 
@@ -93,7 +89,6 @@ begin
   begin
     CloseServiceHandle(hSCM);
     SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), 'Install(): Couldn''t create service.');
-    MessageBox(0, 'Couldn''t create service', SERVICE_NAME, MB_OK);
     exit;
   end;
 
@@ -130,7 +125,6 @@ begin
   if (hSCM = 0) then
   begin
     SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), 'uninstall(): Couldn''t open service manager');
-    MessageBox(0, 'Couldn''t open service manager', SERVICE_NAME, MB_OK);
     exit;
   end;
 
@@ -139,7 +133,6 @@ begin
   begin
     CloseServiceHandle(hSCM);
     SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), 'uninstall(): Couldn''t open service');
-    MessageBox(0, 'Couldn''t open service', SERVICE_NAME, MB_OK);
     exit;
   end;
 
@@ -192,6 +185,7 @@ end;
 procedure ServiceMain(dwNumServicesArgs: DWORD; lpServiceArgVectors: LPSTR); stdcall;
 var
   szFilePath: array[0..MAX_PATH-1] of char;
+  iTimer: integer;
 begin
   ZeroMemory(@szFilePath[0], sizeof(szFilePath));
   GetModuleFileName(0, szFilePath, MAX_PATH);
@@ -221,11 +215,25 @@ begin
 
   //模拟服务的运行，10秒后自动退出。应用时将主要任务放于此即可
   SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), 'ServiceMain(): Started.');
+
+  //InitTCPSocket; //开启socket侦听
+
+  //StatusEchoInit;  //开启UDP 侦听
+
+  iTimer := 1;
   while (status.dwCurrentState = SERVICE_RUNNING) do
   begin
-    UpdateService('d:\jiaoyan\toll\JYUpdateService.exe.uTMP', SERVICE_NAME);
-    Sleep(5000);
+    Dec(iTimer);
+    if iTimer <= 0 then
+    begin
+      DownloadAndUpdate;
+      iTimer := 3600;
+    end;
+    Sleep(1000);
   end;
+
+  //FreeTCPSocket; 
+  //StatusEchoFree;
 
   SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), 'ServiceMain(): Stop.');
   status.dwCurrentState := SERVICE_STOPPED;

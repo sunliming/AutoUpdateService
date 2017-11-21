@@ -41,17 +41,17 @@ MaxStackSize=1048576
 ImageBase=4194304
 ExeDescription=
 [Directories]
-OutputDir=d:\jiaoyan\toll
-UnitOutputDir=.\_temp
+OutputDir=.\..\_build\debug\JYUpdateService
+UnitOutputDir=.\..\_template
 PackageDLLOutputDir=
 PackageDCPOutputDir=
-SearchPath=
+SearchPath=indy;jy-delphi-toolbox
 Packages=vcl;rtl;dbrtl;adortl;vcldb;vclx;bdertl;vcldbx;ibxpress;dsnap;cds;bdecds;qrpt;teeui;teedb;tee;dss;teeqr;visualclx;visualdbclx;dsnapcrba;dsnapcon;VclSmp;vclshlctrls;vclie;xmlrtl;inet;inetdbbde;inetdbxpress;inetdb;nmfast;webdsnap;websnap;soaprtl;dbexpress;dbxcds;dclOffice2k
 Conditionals=
 DebugSourceDirs=
 UsePackages=0
 [Parameters]
-RunParams=
+RunParams=/install
 HostApplication=
 Launcher=
 UseLauncher=0
@@ -64,9 +64,9 @@ RootDir=C:\Program Files (x86)\Borland\Delphi6\Bin\
 IncludeVerInfo=1
 AutoIncBuild=1
 MajorVer=1
-MinorVer=0
+MinorVer=1
 Release=0
-Build=71
+Build=219
 Debug=0
 PreRelease=0
 Special=0
@@ -77,25 +77,39 @@ CodePage=936
 [Version Info Keys]
 CompanyName=
 FileDescription=
-FileVersion=1.0.0.71
+FileVersion=1.1.0.219
 InternalName=
 LegalCopyright=
 LegalTrademarks=
-OriginalFilename=
+OriginalFilename=JYUpdateService.exe
 ProductName=
 ProductVersion=1.0.0.0
 Comments=
 [Excluded Packages]
-c:\program files (x86)\borland\delphi6\Projects\Bpl\Utilities_D6.bpl=Open XML Utilities Library
-c:\program files (x86)\borland\delphi6\Projects\Bpl\dclusr60.bpl=Borland User Components
-F:\Downloads\delphi-ffmpeg-trial-3.9\FFVCL_Trial_v3.9\FFmpeg_D6.bpl=Delphi FFmpeg VCL Components
+c:\program files\borland\delphi6\Bin\dclnet60.bpl=Borland Internet Components
+c:\program files\borland\delphi6\Bin\dclwbm60.bpl=Borland InternetExpress Components
+c:\program files\borland\delphi6\Bin\dclwebsnap60.bpl=Borland WebSnap Components
+c:\program files\borland\delphi6\Bin\dclsoap60.bpl=Borland SOAP Components
 [HistoryLists\hlUnitAliases]
 Count=1
 Item0=WinTypes=Windows;WinProcs=Windows;DbiTypes=BDE;DbiProcs=BDE;DbiErrs=BDE;
+[HistoryLists\hlSearchPath]
+Count=9
+Item0=indy;jy-delphi-toolbox
+Item1=indy
+Item2=..\lanemain\main
+Item3=..\lanemain\indy;..\lanemain\main
+Item4=..\lanemain\indy
+Item5=C:\Program Files (x86)\Borland\Delphi6\Source\indy;..\00.jy-delphi-toolbox
+Item6=.\AutoUpdateUnits;C:\Program Files (x86)\Borland\Delphi6\Source\indy9;D:\My Documents\My Work\GitHub\jy-delphi-toolbox
+Item7=.\AutoUpdateUnits;C:\Program Files (x86)\Borland\Delphi6\Source\indy9
+Item8=.\AutoUpdateUnits
 [HistoryLists\hlUnitOutputDirectory]
-Count=1
-Item0=.\_temp
-[HistoryLists\hlOutputDirectorry]
 Count=2
-Item0=d:\jiaoyan\toll
+Item0=.\..\_template
+Item1=.\_temp
+[HistoryLists\hlOutputDirectorry]
+Count=3
+Item0=.\..\_build\debug\JYUpdateService
 Item1=.\_output
+Item2=d:\jiaoyan\toll

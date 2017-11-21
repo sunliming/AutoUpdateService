@@ -1,0 +1,580 @@
+unit uDownloadFiles;
+
+interface
+
+procedure DownloadAndUpdate;
+
+implementation
+
+uses Windows, Classes, SysUtils, StrUtils, IniFiles, uGlobal, slmlog, jyDownloadFTPFile,
+  jyURLFunc, uFileVersionProc, md5, uDelphiCompress, uUpdateService, uHash;
+
+{$DEFINE DEBUG1}
+
+const
+  DEFAULT_UPDATE_LIST_FILE_URL = 'ftp://10.23.2.112/Stations/Lanes/UpdateList.ulst';
+
+  UPDATE_MAIN_INI   = 0;
+  UPDATE_OTHER_FILE = 1;
+
+  OP_TYPE_REGISTRY    = 10;
+  OP_TYPE_SELF        = 20;
+  OP_TYPE_SERVICE     = 30;
+  OP_TYPE_RUN         = 40;
+  OP_TYPE_MD5_COPY    = 50;
+  OP_TYPE_RENAME_COPY = 60;
+  OP_TYPE_OVERWRITE   = 70;
+  OP_TYPE_COPY        = 80;
+  OP_TYPE_NONE        = 255;
+
+  ROLE_DEBUGGER       = 10;
+  ROLE_TESTER_ALPHA   = 20;
+  ROLE_TESTER_BETA    = 30;
+  ROLE_TESTER_RUN     = 40;
+  ROLE_USER           = 50;
+
+type
+  TRoleType    = Byte;
+  TServiceRunParams = record
+    ServiceName: string;
+    ExePath: string;
+    Version: string;
+    UpdateListFileURL: string;
+    FTPUser: string;
+    FTPPwd: string;
+    Role: TRoleType;
+  end;
+
+  TUpdateType  = Byte;
+  TOperateType = Byte;
+  PFileUpdateParam = ^TFileUpdateParam;
+  TFileUpdateParam = record
+    Status: TRoleType;
+    MinUpdateSrvVerRequire: string;
+    OriginalFile: string;
+    OldVersion: string;
+    UpdateURL: string;
+    CompressType: TCompressType;
+    FTPUser: string;
+    FTPPwd: string;
+    NewVersion: string;
+    TempFile: string;
+    OperateType: TOperateType;
+    ServiceName: string;
+
+    FileHash: string;
+    PathHash: string;
+  end;
+
+var
+  RunParams: TServiceRunParams;
+  UpdateFilesInfo: array of TFileUpdateParam;
+
+function StrToRole(AStr: string): TRoleType;  {$message 'todo: 改为查表'}
+begin
+  if LowerCase(AStr) = 'debugger' then
+    result := ROLE_DEBUGGER
+  else if LowerCase(AStr) = 'tester_alpha' then
+    result := ROLE_TESTER_ALPHA
+  else if LowerCase(AStr) = 'tester_beta' then
+    result := ROLE_TESTER_BETA
+  else if LowerCase(AStr) = 'tester_run' then
+    result := ROLE_TESTER_RUN
+  else
+    result := ROLE_USER;
+end;
+function RoleToStr(ARole: TRoleType): string;
+begin
+  case ARole of
+    ROLE_DEBUGGER: result := 'debugger';
+    ROLE_TESTER_ALPHA: result := 'tester_alpha';
+    ROLE_TESTER_BETA: result := 'tester_beta';
+    ROLE_TESTER_RUN: result := 'tester_run';
+    else result := 'user';
+  end;
+end;
+
+function StrToOpType(AStr: string): TOperateType; {$message 'todo: 改为查表'}
+begin
+  if LowerCase(AStr) = 'registry' then
+    result := OP_TYPE_REGISTRY
+  else if LowerCase(AStr) = 'self' then
+    result := OP_TYPE_SELF
+  else if LowerCase(AStr) = 'service' then
+    result := OP_TYPE_SERVICE
+  else if LowerCase(AStr) = 'run' then
+    result := OP_TYPE_RUN
+  else if LowerCase(AStr) = 'md5copy' then
+    result := OP_TYPE_MD5_COPY
+  else if LowerCase(AStr) = 'rename_copy' then
+    result := OP_TYPE_RENAME_COPY
+  else if LowerCase(AStr) = 'overwrite' then
+    result := OP_TYPE_OVERWRITE
+  else if LowerCase(AStr) = 'copy' then
+    result := OP_TYPE_COPY
+  else
+    result := OP_TYPE_NONE;
+end;
+function OpTypeToStr(AOpType: TOperateType): string;
+begin
+  case AOpType of
+    OP_TYPE_REGISTRY: result := 'registry';
+    OP_TYPE_SELF: result := 'self';
+    OP_TYPE_SERVICE: result := 'service';
+    OP_TYPE_RUN: result := 'run';
+    OP_TYPE_MD5_COPY: result := 'md5copy';
+    OP_TYPE_RENAME_COPY: result := 'rename_copy';
+    OP_TYPE_OVERWRITE: result := 'overwrite';
+    OP_TYPE_COPY: result := 'copy';
+    else result := 'none';
+  end;
+end;
+
+function CompressTypeToStr(ACompressType: TCompressType): string;
+begin
+  case ACompressType of
+    COMPRESS_TYPE_NONE: result := 'none';
+    COMPRESS_TYPE_D6ZLIB1: result := 'd6zlib1';
+    COMPRESS_TYPE_D6ZLIB2: result := 'd6zlib2';
+    else result := 'unknown';
+  end;
+end;
+
+function GetWinDir: string;
+var
+  buf: array[0..MAX_PATH-1] of char;
+begin
+  ZeroMemory(@buf[0], sizeof(buf));
+  GetWindowsDirectory(@buf[0], MAX_PATH);
+
+  result := PChar(@buf[0]);
+  if RightStr(result, 1) <> '\' then result := result + '\';
+end;
+
+procedure GetServerRunParams;
+var
+  strRole: string;
+  szFilePath: array[0..MAX_PATH-1] of char;
+  strIniFile: string;
+begin
+  ZeroMemory(@szFilePath[0], sizeof(szFilePath));
+  GetModuleFileName(0, szFilePath, MAX_PATH);
+
+  RunParams.ServiceName := SERVICE_NAME;
+  RunParams.ExePath := PChar(@szFilePath[0]);
+  RunParams.Version := GetFileVersion(RunParams.ExePath);
+  RunParams.UpdateListFileURL := DEFAULT_UPDATE_LIST_FILE_URL;
+  RunParams.FTPUser := '';
+  RunParams.FTPPwd  := '';
+  RunParams.Role    := ROLE_USER;
+
+  strIniFile := Format('%s%s', [GetWinDir, SERVER_IP_INI_FILE]);
+  if not FileExists(strIniFile) then
+  begin
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('GetServerRunParams(): %s not exists.', [strIniFile]));
+    exit;
+  end;
+
+  with TIniFile.Create(strIniFile) do
+  try try
+    RunParams.UpdateListFileURL := ReadString('Main', 'UpdateListFileURL', DEFAULT_UPDATE_LIST_FILE_URL);
+    RunParams.FTPUser := ReadString('Main', 'FTPUserName', '');
+    RunParams.FTPPwd  := ReadString('Main', 'FTPPassword', '');
+    strRole := ReadString('Main', 'ROLE', 'Normal');
+    if LowerCase(strRole) = 'debugger' then
+      RunParams.Role := ROLE_DEBUGGER
+    else if LowerCase(strRole) = 'tester_alpha' then
+      RunParams.Role := ROLE_TESTER_ALPHA
+    else if LowerCase(strRole) = 'tester_beta' then
+      RunParams.Role := ROLE_TESTER_BETA
+    else if LowerCase(strRole) = 'tester_run' then
+      RunParams.Role := ROLE_TESTER_RUN
+    else
+      RunParams.Role := ROLE_USER;
+
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('GetServerRunParams(): Init Finished. ListFile: %s; Role: %s', [RunParams.UpdateListFileURL, strRole]));
+  finally
+    Free;
+  end;
+  except
+  end;
+end;
+
+function DownLoadUpdateListFile(var AListFilePath: string): boolean;
+var
+  ADomain, AUser, APwd, ADir, ARemoteFileName: string;
+  APort: integer;
+  strLocalFilePath: string;
+begin
+  result := false;
+  AListFilePath := '';
+  
+  if not AnalyzeFTPUrl(RunParams.UpdateListFileURL, AUser, APwd, ADomain, APort, ADir, ARemoteFileName) then
+  begin
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('DownLoadUpdateListFile(): AnalyzeFTPUrl Fail. (URL: %s)', [RunParams.UpdateListFileURL]));
+    exit;
+  end;
+
+  if ARemoteFileName = '' then
+  begin
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('DownLoadUpdateListFile(): RemoteFileName is null', []));
+    exit;
+  end;
+
+  strLocalFilePath := Format('%s%s', [CACHE_PATH, ARemoteFileName]);
+  if not DownloadToFile(RunParams.UpdateListFileURL, RunParams.FTPUser, RunParams.FTPPwd, strLocalFilePath, true) then
+  begin
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('DownLoadUpdateListFile(): Download List File Fail. URL: %s; LocalFile: %s', [RunParams.UpdateListFileURL, strLocalFilePath]));
+    exit;
+  end;
+
+  AListFilePath := strLocalFilePath;
+  result := true;
+end;
+
+function GenerateCacheFileName(AURL: string; AIndex: integer): string;
+var
+  ADomain, AUser, APwd, ADir: string;
+  APort: integer;
+  strRemoteFile: string;
+begin
+  result := '';
+
+  if not AnalyzeFTPUrl(AURL, AUser, APwd, ADomain, APort, ADir, strRemoteFile) then
+  begin
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('GenerateCacheFileName(): AnalyzeFTPUrl Fail. (URL: %s)', [AURL]));
+    exit;
+  end;
+
+  result := Format('%s%s.%s%.2d', [CACHE_PATH, strRemoteFile, FormatDateTime('yyyymmddhhnnsszzz', now), AIndex]);
+end;
+
+function ReadUpdateFileList(AListFilePath: string): boolean;
+var
+  i: integer;
+  iFileNumber: integer;
+  strSection: string;
+begin
+  result := false;
+  
+  with TIniFile.Create(AListFilePath) do
+  try try
+    iFileNumber := ReadInteger('Main', 'FileNumber', 0);
+    SetLength(UpdateFilesInfo, iFileNumber);
+    for i:=0 to iFileNumber-1 do
+    begin
+      strSection := Format('File%.2d', [i+1]);
+      UpdateFilesInfo[i].Status := StrToRole(Trim(ReadString(strSection, 'Status', 'user')));
+      UpdateFilesInfo[i].MinUpdateSrvVerRequire := Trim(ReadString(strSection, 'MinSvrVer', '1.0.0.0'));
+      UpdateFilesInfo[i].OperateType := StrToOpType(Trim(ReadString(strSection, 'OpType', 'none')));
+      UpdateFilesInfo[i].ServiceName := Trim(ReadString(strSection, 'ServiceName', ''));
+      if UpdateFilesInfo[i].OperateType = OP_TYPE_SELF then
+        UpdateFilesInfo[i].OriginalFile := RunParams.ExePath
+      else
+        UpdateFilesInfo[i].OriginalFile := Trim(ReadString(strSection, 'Path', ''));
+      UpdateFilesInfo[i].OldVersion := GetFileVersion(UpdateFilesInfo[i].OriginalFile);
+      UpdateFilesInfo[i].UpdateURL := Trim(ReadString(strSection, 'URL', ''));
+      UpdateFilesInfo[i].CompressType := StrToCompressType(Trim(ReadString(strSection, 'CompressType', '')));
+      UpdateFilesInfo[i].FTPUser := Trim(ReadString(strSection, 'UserName', ''));
+      UpdateFilesInfo[i].FTPPwd := Trim(ReadString(strSection, 'Password', ''));
+      UpdateFilesInfo[i].NewVersion := Trim(ReadString(strSection, 'Version', '0.0.0.0'));
+      UpdateFilesInfo[i].FileHash := Trim(ReadString(strSection, 'FileHash', ''));
+      UpdateFilesInfo[i].PathHash := Trim(ReadString(strSection, 'PathHash', ''));
+      UpdateFilesInfo[i].TempFile := GenerateCacheFileName(UpdateFilesInfo[i].UpdateURL, i);
+      {$IFDEF DEBUG}
+      SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('ReadUpdateFileList(): File%.2d Status:%s; ' +
+                                                                                                        'OriginalFile:%s; ' +
+                                                                                                        'OldVersion:%s; ' +
+                                                                                                        'UpdateURL:%s; ' +
+                                                                                                        'CompressType:%s; ' +
+                                                                                                        'NewVersion:%s; ' +
+                                                                                                        'TempFile:%s; '+
+                                                                                                        'OperateType:%s; '+
+                                                                                                        'ServiceName:%s;',
+                                                                                                        [i+1,
+                                                                                                         RoleToStr(UpdateFilesInfo[i].Status),
+                                                                                                         UpdateFilesInfo[i].OriginalFile,
+                                                                                                         UpdateFilesInfo[i].OldVersion,
+                                                                                                         UpdateFilesInfo[i].UpdateURL,
+                                                                                                         CompressTypeToStr(UpdateFilesInfo[i].CompressType),
+                                                                                                         UpdateFilesInfo[i].NewVersion,
+                                                                                                         UpdateFilesInfo[i].TempFile,
+                                                                                                         OpTypeToStr(UpdateFilesInfo[i].OperateType),
+                                                                                                         UpdateFilesInfo[i].ServiceName]));
+      {$ENDIF}
+    end;
+
+    DeleteFile(AListFilePath);
+    result := true;
+  finally
+    Free;
+  end;
+  except
+  end;
+end;
+
+function MD5FileExists(ATargetPath, AAESMD5String: string): boolean;
+var
+  strTarget: string;
+begin
+  strTarget := AESMD5ToMD5String(AAESMD5String);
+  strTarget := StringReplace(strTarget, 'A', '10', [rfReplaceAll]);
+  strTarget := StringReplace(strTarget, 'B', '11', [rfReplaceAll]);
+  strTarget := StringReplace(strTarget, 'C', '12', [rfReplaceAll]);
+  strTarget := StringReplace(strTarget, 'D', '13', [rfReplaceAll]);
+  strTarget := StringReplace(strTarget, 'E', '14', [rfReplaceAll]);
+  strTarget := StringReplace(strTarget, 'F', '15', [rfReplaceAll]);
+  strTarget := Format('%s%s.~~~', [ExtractFilePath(ATargetPath), LeftStr(strTarget, 8)]);
+
+  result := FileExists(strTarget);
+end;
+
+function Update_Do_MD5Copy(ASourceFile: string; ATargetPath: string): boolean;
+var
+  strTarget: string;
+begin
+  result := false;
+
+  if VersionCheck(GetFileVersion(ASourceFile), GetFileVersion(ATargetPath)) <= 0 then
+  begin
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('Update_Do_MD5Copy(): Skip Update %s, Ver.%s ==> Ver.%s', [ATargetPath, GetFileVersion(ATargetPath), GetFileVersion(ASourceFile)]));
+    DeleteFile(ASourceFile);
+    exit;
+  end;
+
+  strTarget := MD5DigestToStr(MD5File(ASourceFile));
+  strTarget := StringReplace(strTarget, 'A', '10', [rfReplaceAll]);
+  strTarget := StringReplace(strTarget, 'B', '11', [rfReplaceAll]);
+  strTarget := StringReplace(strTarget, 'C', '12', [rfReplaceAll]);
+  strTarget := StringReplace(strTarget, 'D', '13', [rfReplaceAll]);
+  strTarget := StringReplace(strTarget, 'E', '14', [rfReplaceAll]);
+  strTarget := StringReplace(strTarget, 'F', '15', [rfReplaceAll]);
+  strTarget := Format('%s%s.~~~', [ExtractFilePath(ATargetPath), LeftStr(strTarget, 8)]);
+
+  result := CopyFile(PChar(ASourceFile), PChar(strTarget), false);
+
+  if result then
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('Update_Do_MD5Copy(): Success copy %s to %s', [ASourceFile, strTarget]))
+  else
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('Update_Do_MD5Copy(): Copy %s to %s Fail.', [ASourceFile, strTarget]));
+
+  DeleteFile(ASourceFile);
+end;
+
+function Update_Do_Copy(ASourceFile: string; ATargetPath: string): boolean;
+begin
+  result := false;
+
+  if (FileExists(ATargetPath)) and (VersionCheck(GetFileVersion(ASourceFile), GetFileVersion(ATargetPath)) <= 0) then
+  begin
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('Update_Do_Copy(): Skip Update %s, Ver.%s ==> Ver.%s', [ATargetPath, GetFileVersion(ATargetPath), GetFileVersion(ASourceFile)]));
+    DeleteFile(ASourceFile);
+    exit;
+  end;
+
+  result := CopyFile(PChar(ASourceFile), PChar(ATargetPath), false);
+
+  if result then
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('Update_Do_Copy(): Success copy %s to %s', [ASourceFile, ATargetPath]))
+  else
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('Update_Do_Copy(): Copy %s to %s Fail.', [ASourceFile, ATargetPath]));
+
+  DeleteFile(ASourceFile);
+end;
+
+function Update_Do_OverWrite(ASourceFile: string; ATargetPath: string): boolean;
+begin
+  result := false;
+
+  result := CopyFile(PChar(ASourceFile), PChar(ATargetPath), false);
+
+  if result then
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('Update_Do_OverWrite(): Success copy %s to %s', [ASourceFile, ATargetPath]))
+  else
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('Update_Do_OverWrite(): Copy %s to %s Fail.', [ASourceFile, ATargetPath]));
+
+  DeleteFile(ASourceFile);
+end;
+
+function Update_Do_UpdateService(ASourceFile, AServiceName, ATargetFile, ANewVersion: string): boolean;
+begin
+  result := false;
+end;
+
+function Update_Do_Run(ATempFile: string; ATarget: string): boolean;
+begin
+  result := false;
+
+  try try
+    if FileExists(ATarget) then
+    begin
+      SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('Update_Do_Run(): Skip Run %s, Target File Exists.', [ATarget]));
+      result := true;
+      exit;
+    end;
+
+    CopyFile(PChar(ATempFile), PChar(ATarget), false);
+
+    result := (WinExec(PChar(ATarget), SW_HIDE) >= 32);
+  finally
+    DeleteFile(ATempFile);
+  end;
+  except
+  end;
+end;
+
+function Update_Do_SelfUpdate(ASourceFile, AServiceName: string): boolean;
+begin
+  result := false;
+  
+  if LowerCase(Trim(AServiceName)) <> LowerCase(Trim(RunParams.ServiceName)) then
+  begin
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('UpdateSingleFile(): Skip Update Self, Service Name not match: %s<>%s', [AServiceName, RunParams.ServiceName]));
+    DeleteFile(ASourceFile);
+    exit;
+  end;
+  result := UpdateService(ASourceFile, RunParams.ServiceName);
+end;
+
+function UpdateSingleFile(AUpdateParam: PFileUpdateParam): boolean;
+var
+  strmFile: TMemoryStream;
+begin
+  result := false;
+
+  strmFile := TMemoryStream.Create;
+  try try
+    //本机角色不需要更新
+    if RunParams.Role > AUpdateParam^.Status then
+    begin
+      SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('UpdateSingleFile(): Skip %s, File Status:%s, Myself Role:%s', [AUpdateParam^.OriginalFile, RoleToStr(AUpdateParam^.Status), RoleToStr(RunParams.Role)]));
+      exit;
+    end;
+
+    //更新服务版本不够新
+    if (VersionCheck(RunParams.Version, AUpdateParam^.MinUpdateSrvVerRequire) < 0) then
+    begin
+      SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('UpdateSingleFile(): Skip %s, Service Version:%s, Require Min Version:%s', [AUpdateParam^.OriginalFile, RunParams.Version, AUpdateParam^.MinUpdateSrvVerRequire]));
+      exit;
+    end;
+
+    //目标路径hash错
+    if (AUpdateParam^.OperateType in [OP_TYPE_MD5_COPY, OP_TYPE_RENAME_COPY, OP_TYPE_OVERWRITE, OP_TYPE_COPY])
+      and (CalcPathAESMD5(LowerCase(Trim(AUpdateParam^.OriginalFile))) <> AUpdateParam^.PathHash) then
+    begin
+      SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('UpdateSingleFile(): Skip %s, PathHash Error.', [AUpdateParam^.OriginalFile]));
+      exit;
+    end;
+
+    if not (AUpdateParam^.OperateType in [OP_TYPE_REGISTRY, OP_TYPE_RUN, OP_TYPE_OVERWRITE]) then
+    begin
+      //版本已经是最新的，不必更新
+      if (VersionCheck(AUpdateParam^.NewVersion, AUpdateParam^.OldVersion) <= 0) then
+      begin
+        SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('UpdateSingleFile(): Skip %s, Original File Version Newest, OldVersion:%s, NewVersion:%s', [AUpdateParam^.OriginalFile, AUpdateParam^.OldVersion, AUpdateParam^.NewVersion]));
+        exit;
+      end;
+    end;
+
+    //导入和运行的文件已经存在，说明下载运行过，不必更新
+    if (AUpdateParam^.OperateType in [OP_TYPE_REGISTRY, OP_TYPE_RUN]) then
+    begin
+      if FileExists(AUpdateParam^.OriginalFile) then
+      begin
+        SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('UpdateSingleFile(): Skip %s, Run/Registry Target File Exists.', [AUpdateParam^.OriginalFile]));
+        exit;
+      end;
+    end;
+
+    //MD5COPY的目标文件已经存在
+    if MD5FileExists(AUpdateParam^.OriginalFile, AUpdateParam^.FileHash) then
+    begin
+      SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('UpdateSingleFile(): Skip %s, MD5Copy Target File Exists.', [AUpdateParam^.OriginalFile]));
+      exit;
+    end;
+
+    //下载失败则停止更新
+    if not DownloadToStream(AUpdateParam^.UpdateURL, AUpdateParam^.FTPUser, AUpdateParam^.FTPPwd, strmFile) then
+    begin
+      SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('UpdateSingleFile(): Skip %s, Download Fail.', [AUpdateParam^.OriginalFile]));
+      exit;
+    end;
+
+    //解压失败则停止更新
+    if not DelphiDecompressStream(AUpdateParam^.CompressType, strmFile, AUpdateParam^.TempFile) then
+    begin
+      SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('UpdateSingleFile(): Skip %s, Decompress Fail.', [AUpdateParam^.OriginalFile]));
+      exit;
+    end;
+
+    //文件hash错
+    if (CalcFileAESMD5(AUpdateParam^.TempFile) <> AUpdateParam^.FileHash) then
+    begin
+      SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('UpdateSingleFile(): Skip %s, FileHash Error.', [AUpdateParam^.OriginalFile]));
+      exit;
+    end;
+
+    case AUpdateParam^.OperateType of
+      OP_TYPE_REGISTRY: ;
+      OP_TYPE_SELF: result := Update_Do_SelfUpdate(AUpdateParam^.TempFile, AUpdateParam^.ServiceName);
+      OP_TYPE_SERVICE: Update_Do_UpdateService(AUpdateParam^.TempFile, AUpdateParam^.ServiceName, AUpdateParam^.OriginalFile, AUpdateParam^.NewVersion);
+      OP_TYPE_RUN: Update_Do_Run(AUpdateParam^.TempFile, AUpdateParam^.OriginalFile);
+      OP_TYPE_MD5_COPY: result := Update_Do_MD5Copy(AUpdateParam^.TempFile, AUpdateParam^.OriginalFile);
+      OP_TYPE_RENAME_COPY: ;
+      OP_TYPE_OVERWRITE: Update_Do_OverWrite(AUpdateParam^.TempFile, AUpdateParam^.OriginalFile);
+      OP_TYPE_COPY: Update_Do_Copy(AUpdateParam^.TempFile, AUpdateParam^.OriginalFile);
+      OP_TYPE_NONE: begin
+        result := false;
+        SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('UpdateSingleFile(): Skip %s, OpType=none', [AUpdateParam^.OriginalFile]));
+      end;
+    end;
+  finally
+    strmFile.Free;
+  end;
+  except
+  end;
+end;
+
+function UpdateAllFiles: integer;
+var
+  i: integer;
+  res: boolean;
+begin
+  result := 0;
+
+  {$message '先排序(暂时手动在ulst文件中给出正确顺序)'}
+
+  for i:=0 to Length(UpdateFilesInfo)-1 do
+  begin
+    res := UpdateSingleFile(@UpdateFilesInfo[i]);
+    if res then Inc(result);
+    if (UpdateFilesInfo[i].OperateType = OP_TYPE_SELF) and res then
+    begin
+      SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('UpdateAllFiles(): Self Update, Skip All Others!!!', []));
+      break;
+    end;
+  end;
+end;
+
+procedure DownloadAndUpdate;
+var
+  AListFilePath: string;
+  iUpdateNumber: integer;
+begin
+  try
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), '');
+    GetServerRunParams;
+
+    ForceDirectories(CACHE_PATH);
+
+    if not DownLoadUpdateListFile(AListFilePath) then exit;
+
+    if not ReadUpdateFileList(AListFilePath) then exit;
+
+    iUpdateNumber := UpdateAllFiles;
+    SaveToLogFile(Format(LOG_FILE, [FormatDateTime('yyyy-mm', now)]), Format('DownloadAndUpdate(): %d of %d File(s) Updated.', [iUpdateNumber, Length(UpdateFilesInfo)]));
+  except
+  end;
+end;
+
+end.

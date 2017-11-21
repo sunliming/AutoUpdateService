@@ -1,0 +1,21 @@
+unit uDelphiCompress;
+
+interface
+
+type
+  TCompressType = Byte;
+
+const
+  COMPRESS_TYPE_NONE    = 0;
+  COMPRESS_TYPE_D6ZLIB1 = 1;
+  COMPRESS_TYPE_UNKNOWN = 255;
+
+function DelphiDecompressStream(ACompressType: TCompressType; ASourceStream: TStream; ATargetFile: string): boolean;
+
+implementation
+
+function DelphiDecompressStream(ACompressType: TCompressType; ASourceStream: TStream; ATargetFile: string): boolean;
+begin
+end;
+
+end.
