@@ -42,7 +42,7 @@ ImageBase=4194304
 ExeDescription=
 [Directories]
 OutputDir=.\..\_build\debug\JYUpdateService
-UnitOutputDir=.\..\_template
+UnitOutputDir=.\..\_temp
 PackageDLLOutputDir=
 PackageDCPOutputDir=
 SearchPath=indy;jy-delphi-toolbox
